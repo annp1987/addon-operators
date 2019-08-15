@@ -24,6 +24,9 @@ import (
 type CoreDNSSpec struct {
 	addonv1alpha1.CommonSpec `json:",inline"`
 	addonv1alpha1.PatchSpec  `json:",inline"`
+	// Corefile is a string representation of the operated CoreDNS's ConfigMap.
+	// This string is hashed so that it's possible to do RollingUpdates of CoreDNS.
+	Corefile string `json:"corefile,omitempty"`
 }
 
 // CoreDNSStatus defines the observed state of CoreDNS
