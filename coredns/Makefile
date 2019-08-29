@@ -58,9 +58,20 @@ push-image:
 	mkdir -p .build
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o .build/manager ./cmd/manager
 	mkdir -p .build/bin
-	cd .build/bin; wget -N https://storage.googleapis.com/kubernetes-release/release/v1.14.0/bin/linux/amd64/kubectl
+	cd .build/bin; wget -N https://storage.googleapis.com/kubernetes-release/release/v1.15.3/bin/linux/amd64/kubectl
 	chmod +x .build/bin/kubectl
 	tar cvf .build/layer.tar -C .build manager bin/kubectl
 	tar rvf .build/layer.tar channels/
 	crane append --base gcr.io/distroless/static:latest --new_layer .build/layer.tar --new_tag ${IMG} --output .build/merged.tar
 	crane push .build/merged.tar ${IMG}
+
+# Start a kubernetes cluster
+kind-cluster:
+	kind create cluster --name coredns-operator
+
+# Load the docker-build into the kind cluster so it can be run
+kind-load:
+	kind load docker-image --name coredns-operator ${IMG}
+
+clean-kind:
+	kind delete cluster --name coredns-operator
