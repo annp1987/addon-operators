@@ -106,6 +106,7 @@ spec:
         k8s-app: kube-dns
       annotations:
         seccomp.security.alpha.kubernetes.io/pod: 'docker/default'
+        configHash: ""
     spec:
       priorityClassName: system-cluster-critical
       serviceAccountName: coredns

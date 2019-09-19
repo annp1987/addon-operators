@@ -22,10 +22,12 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
 	api "sigs.k8s.io/addon-operators/coredns/pkg/apis/addons/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -33,6 +35,9 @@ import (
 	"sigs.k8s.io/kubebuilder-declarative-pattern/pkg/patterns/addon"
 	"sigs.k8s.io/kubebuilder-declarative-pattern/pkg/patterns/addon/pkg/status"
 	"sigs.k8s.io/kubebuilder-declarative-pattern/pkg/patterns/declarative"
+
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // Add creates a new CoreDNS Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
@@ -44,7 +49,7 @@ func Add(mgr manager.Manager) error {
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) *ReconcileCoreDNS {
 	labels := map[string]string{
-		"k8s-app": "coredns",
+		"k8s-app": " ",
 	}
 
 	r := &ReconcileCoreDNS{}
@@ -117,6 +122,8 @@ var _ reconcile.Reconciler = &ReconcileCoreDNS{}
 // ReconcileCoreDNS reconciles a CoreDNS object
 type ReconcileCoreDNS struct {
 	declarative.Reconciler
+	client.Client
+	scheme *runtime.Scheme
 }
 
 func findDNSClusterIP(ctx context.Context, c client.Client) (string, error) {
@@ -139,4 +146,107 @@ func findDNSClusterIP(ctx context.Context, c client.Client) (string, error) {
 	result := ip.String()
 	klog.Infof("determined ClusterIP for kube-dns should be %q", result)
 	return result, nil
+}
+
+// Reconcile reads that state of the cluster for a CoreDNS object and makes changes based on the state read
+// and what is in the CoreDNS.Spec
+// TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
+// a Pod as an example
+// Note:
+// The Controller will requeue the Request to be processed again if the returned error is non-nil or
+// Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
+func (r *ReconcileCoreDNS) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+	klog.Infof("Reconciling CoreDNS")
+
+	// Fetch the CoreDNS instance
+	instance := &v1alpha1.CoreDNS{}
+	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+			// Return and don't requeue
+			return reconcile.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
+		return reconcile.Result{}, err
+	}
+
+	if instance.Spec.Corefile == "" {
+		instance.Spec.Corefile = DefaultCorefile
+		klog.Infof("Updating CoreDNS with default Corefile")
+		err = r.client.Update(context.TODO(), instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
+	foundConfigMap := &corev1.ConfigMap{}
+	err = r.createOrFetch(instance, newConfigMapForCR(instance), foundConfigMap)
+	if err != nil && !errors.IsNotFound(err) {
+		return reconcile.Result{}, err
+	} else if err == nil {
+		// The object was found already existing in the cluster
+		// Check that the ConfigMap's Corefile is correct -- if not, update it
+		foundCorefile, inData := foundConfigMap.Data["Corefile"]
+		if !inData || foundCorefile != instance.Spec.Corefile {
+			foundConfigMap.Data["Corefile"] = instance.Spec.Corefile
+			klog.Infof("Updating ConfigMap", foundConfigMap.Namespace, "/", foundConfigMap.Name, "with new Corefile")
+			err = r.client.Update(context.TODO(), foundConfigMap)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		}
+	}
+
+	// Reconcile is successful
+	return reconcile.Result{}, nil
+}
+
+
+// createOrFetch creates an object or populates found with the matching object from the cluster.
+// It returns a notFound error if the object is created.
+func (r *ReconcileCoreDNS) createOrFetch(instance metav1.Object, obj, found runtime.Object) error {
+	meta, ok := obj.(metav1.Object)
+	if !ok {
+		return fmt.Errorf("Meta conversion failed for obj: %+v", obj)
+	}
+
+	// Set CoreDNS instance as the object owner and controller
+	if err := controllerutil.SetControllerReference(instance, meta, r.scheme); err != nil {
+		return err
+	}
+
+	// Check if this Object already exists
+	key, err := client.ObjectKeyFromObject(obj)
+	if err != nil {
+		return err
+	}
+	err = r.client.Get(
+		context.TODO(),
+		key,
+		found,
+	)
+	if err != nil && errors.IsNotFound(err) {
+		klog.Infof("Creating a new obj", "obj.Kind", obj.GetObjectKind().GroupVersionKind(), "obj.Namespace", meta.GetNamespace(), "obj.Name", meta.GetName())
+		createErr := r.client.Create(context.TODO(), obj)
+		if createErr != nil {
+			return err
+		}
+		return err
+	} else if err != nil {
+		return err
+	} else {
+		// obj already exists - just log
+		foundGVK := found.GetObjectKind().GroupVersionKind()
+		foundMeta, ok := found.(metav1.Object)
+		if !ok {
+			return fmt.Errorf("Meta conversion failed for found: %+v", found)
+		}
+		klog.Infof("Skip reconcile: obj already exists", "obj.Kind", foundGVK, "obj.Namespace", foundMeta.GetNamespace(), "obj.Name", foundMeta.GetName())
+
+		fmt.Println("\n", found.GetObjectKind().GroupVersionKind().Kind)
+	}
+
+	return nil
 }
