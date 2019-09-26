@@ -49,7 +49,7 @@ func Add(mgr manager.Manager) error {
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) *ReconcileCoreDNS {
 	labels := map[string]string{
-		"k8s-app": " ",
+		"k8s-app": "coredns",
 	}
 
 	r := &ReconcileCoreDNS{}
@@ -166,6 +166,7 @@ func (r *ReconcileCoreDNS) Reconcile(request reconcile.Request) (reconcile.Resul
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
+			klog.Infof("Coredns error - requeue")
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
