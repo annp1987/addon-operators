@@ -3,6 +3,13 @@
 # YAML string, with resources separated by document
 # markers ("---").
 resources:
-- manifest.yaml
+- services.yaml
+- deployment.yaml
 configMapGenerator:
-    - name: coredns
+- name: coredns
+  namespace: kube-system
+  files:
+  - Corefile
+generatorOptions:
+  labels:
+      addonmanager.kubernetes.io/mode: EnsureExists
