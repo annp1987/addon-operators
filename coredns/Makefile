@@ -29,6 +29,9 @@ deploy: manifests
 manifests:
 	go run vendor/sigs.k8s.io/controller-tools/cmd/controller-gen/main.go all
 
+gen_channels_manifests:
+	kustomize build channels/packages/coredns/1.3.1/ > channels/packages/coredns/1.3.1/manifest.yaml
+
 # Run go fmt against code
 fmt:
 	go fmt ./pkg/... ./cmd/...
