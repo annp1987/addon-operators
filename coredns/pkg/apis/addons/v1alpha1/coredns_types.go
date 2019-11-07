@@ -24,6 +24,7 @@ import (
 type CoreDNSSpec struct {
 	addonv1alpha1.CommonSpec `json:",inline"`
 	addonv1alpha1.PatchSpec  `json:",inline"`
+	addonv1alpha1.ConfigSpec `json:",inline"`
 }
 
 // CoreDNSStatus defines the observed state of CoreDNS
@@ -33,6 +34,7 @@ type CoreDNSStatus struct {
 
 var _ addonv1alpha1.CommonObject = &CoreDNS{}
 var _ addonv1alpha1.Patchable = &CoreDNS{}
+var _ addonv1alpha1.ConfigMapGeneratorAble = &CoreDNS{}
 
 func (c *CoreDNS) ComponentName() string {
 	return "coredns"
@@ -52,6 +54,10 @@ func (c *CoreDNS) SetCommonStatus(s addonv1alpha1.CommonStatus) {
 
 func (c *CoreDNS) PatchSpec() addonv1alpha1.PatchSpec {
 	return c.Spec.PatchSpec
+}
+
+func (c *CoreDNS) ConfigSpec() addonv1alpha1.ConfigSpec {
+	return c.Spec.ConfigSpec
 }
 
 // +genclient
